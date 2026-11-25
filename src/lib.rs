@@ -171,6 +171,69 @@ pub fn load_secret_key(input: &str) -> Result<AsymmetricSecretKey<V4>, AppError>
         .map_err(|e| AppError(format!("Secret key PASERK v4 tidak valid: {e}")))
 }
 
+/// Locate a default `signing.key` across CWD, binary sibling dir, user config dir
+/// (`~/.config/d4if/signing.key` / `%APPDATA%\d4if\signing.key`), or saved last key path.
+pub fn find_default_signing_key() -> Option<PathBuf> {
+    let cwd_key = PathBuf::from("signing.key");
+    if cwd_key.is_file() {
+        return Some(cwd_key);
+    }
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            let sibling = dir.join("signing.key");
+            if sibling.is_file() {
+                return Some(sibling);
+            }
+        }
+    }
+    if let Some(cfg_dir) = user_config_dir() {
+        let cfg_key = cfg_dir.join("signing.key");
+        if cfg_key.is_file() {
+            return Some(cfg_key);
+        }
+        let last_path_file = cfg_dir.join("last_key_path");
+        if let Ok(saved) = fs::read_to_string(&last_path_file) {
+            let saved_path = PathBuf::from(saved.trim());
+            if saved_path.is_file() {
+                return Some(saved_path);
+            }
+        }
+    }
+    None
+}
+
+/// Persist the last chosen `signing.key` path so `sign` works from any folder.
+pub fn remember_signing_key_path(path: &Path) {
+    if !path.is_file() {
+        return;
+    }
+    let Some(cfg_dir) = user_config_dir() else {
+        return;
+    };
+    let abs = fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    if fs::create_dir_all(&cfg_dir).is_ok() {
+        let _ = fs::write(
+            cfg_dir.join("last_key_path"),
+            abs.to_string_lossy().as_bytes(),
+        );
+    }
+}
+
+fn user_config_dir() -> Option<PathBuf> {
+    #[cfg(windows)]
+    {
+        if let Ok(appdata) = std::env::var("APPDATA") {
+            return Some(PathBuf::from(appdata).join("d4if"));
+        }
+    }
+    if let Ok(xdg) = std::env::var("XDG_CONFIG_HOME") {
+        if !xdg.trim().is_empty() {
+            return Some(PathBuf::from(xdg).join("d4if"));
+        }
+    }
+    std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config").join("d4if"))
+}
+
 pub fn load_public_key(input: &str) -> Result<AsymmetricPublicKey<V4>, AppError> {
     let raw = read_inline_or_file(input)?;
     AsymmetricPublicKey::<V4>::try_from(raw.as_str())

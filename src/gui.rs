@@ -10,7 +10,9 @@ use hayro::{render, PixmapSettings, RenderCache, RenderSettings};
 use qrcode::{Color as QrColor, EcLevel, QrCode};
 
 use crate::pdf_stamp::{inspect_pdf_pages, sign_and_stamp_pdf, PdfPageMetrics, PdfStampRequest};
-use crate::{load_secret_key, parse_duration_str};
+use crate::{
+    find_default_signing_key, load_secret_key, parse_duration_str, remember_signing_key_path,
+};
 
 const LECTURERS: [(&str, &str); 9] = [
     ("RAN", "Roni Andarsyah, S.T., M.Kom."),
@@ -283,6 +285,7 @@ impl SignEditorApp {
 
         match sign_and_stamp_pdf(&secret, &req) {
             Ok(res) => {
+                remember_signing_key_path(Path::new(self.key_input.trim()));
                 let hash_short = res
                     .sign_result
                     .doc_hash
@@ -563,7 +566,10 @@ impl eframe::App for SignEditorApp {
             let path = picked.to_path_buf();
             match self.dialog_purpose.take() {
                 Some(DialogPurpose::PickPdf) => self.load_pdf_file(&path),
-                Some(DialogPurpose::PickKey) => self.key_input = path.display().to_string(),
+                Some(DialogPurpose::PickKey) => {
+                    remember_signing_key_path(&path);
+                    self.key_input = path.display().to_string();
+                }
                 Some(DialogPurpose::SavePdf) => self.save_signed_pdf(&path),
                 None => {}
             }
@@ -578,20 +584,4 @@ fn non_empty(s: &str) -> Option<String> {
     } else {
         Some(trimmed.to_string())
     }
-}
-
-fn find_default_signing_key() -> Option<PathBuf> {
-    let cwd_key = PathBuf::from("signing.key");
-    if cwd_key.is_file() {
-        return Some(cwd_key);
-    }
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(dir) = exe.parent() {
-            let sibling = dir.join("signing.key");
-            if sibling.is_file() {
-                return Some(sibling);
-            }
-        }
-    }
-    None
 }

@@ -6,9 +6,9 @@ use clap::{Parser, Subcommand, ValueEnum};
 use d4if_sign::gui::run_gui;
 use d4if_sign::pdf_stamp::{sign_and_stamp_pdf, PdfStampRequest};
 use d4if_sign::{
-    extract_token_string, generate_keypair, inspect_token, load_public_key, load_secret_key,
-    parse_claim_kv, parse_duration_str, render_svg, render_terminal, sign_document, verify_token,
-    write_key_file, write_qr, QrFormat, SignRequest,
+    extract_token_string, find_default_signing_key, generate_keypair, inspect_token,
+    load_public_key, load_secret_key, parse_claim_kv, parse_duration_str, render_svg,
+    render_terminal, sign_document, verify_token, write_key_file, write_qr, QrFormat, SignRequest,
 };
 
 #[derive(Parser)]
@@ -227,7 +227,14 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             qr_size,
             json,
         } => {
-            let secret = load_secret_key(&key)?;
+            let resolved_key = if key == "signing.key" && !std::path::Path::new(&key).is_file() {
+                find_default_signing_key()
+                    .map(|p| p.display().to_string())
+                    .unwrap_or(key)
+            } else {
+                key
+            };
+            let secret = load_secret_key(&resolved_key)?;
             let ttl_secs = ttl.as_deref().map(parse_duration_str).transpose()?;
             let extra_claims = claims
                 .iter()
