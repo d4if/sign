@@ -142,7 +142,11 @@ pub fn generate_keypair() -> Result<GeneratedKeypair, AppError> {
     })
 }
 
-pub fn write_key_file(path: &Path, content: &str, #[allow(unused_variables)] secret: bool) -> Result<(), AppError> {
+pub fn write_key_file(
+    path: &Path,
+    content: &str,
+    #[allow(unused_variables)] secret: bool,
+) -> Result<(), AppError> {
     if let Some(parent) = path.parent() {
         if !parent.as_os_str().is_empty() {
             fs::create_dir_all(parent)?;
@@ -180,7 +184,10 @@ pub fn derive_public_paserk(secret: &AsymmetricSecretKey<V4>) -> Result<String, 
 
 fn read_inline_or_file(input: &str) -> Result<String, AppError> {
     let trimmed = input.trim();
-    if trimmed.starts_with("k4.secret.") || trimmed.starts_with("k4.public.") || trimmed.starts_with("v4.public.") {
+    if trimmed.starts_with("k4.secret.")
+        || trimmed.starts_with("k4.public.")
+        || trimmed.starts_with("v4.public.")
+    {
         return Ok(trimmed.to_string());
     }
     let path = Path::new(trimmed);
@@ -191,9 +198,8 @@ fn read_inline_or_file(input: &str) -> Result<String, AppError> {
 }
 
 pub fn sha256_file(path: &Path) -> Result<FileDigest, AppError> {
-    let file = File::open(path).map_err(|e| {
-        AppError(format!("Gagal membuka dokumen '{}': {e}", path.display()))
-    })?;
+    let file = File::open(path)
+        .map_err(|e| AppError(format!("Gagal membuka dokumen '{}': {e}", path.display())))?;
     let metadata = file.metadata()?;
     let mut reader = BufReader::with_capacity(64 * 1024, file);
     let mut hasher = Sha256::new();
@@ -235,10 +241,11 @@ pub fn parse_duration_str(raw: &str) -> Result<u64, AppError> {
         (s, 1u64)
     };
 
-    let value: u64 = num_part
-        .trim()
-        .parse()
-        .map_err(|_| AppError(format!("Format TTL tidak valid: '{raw}'. Contoh: 30m, 24h, 365d.")))?;
+    let value: u64 = num_part.trim().parse().map_err(|_| {
+        AppError(format!(
+            "Format TTL tidak valid: '{raw}'. Contoh: 30m, 24h, 365d."
+        ))
+    })?;
     if value == 0 {
         return Err(AppError("Durasi TTL harus lebih besar dari 0.".to_string()));
     }
@@ -256,9 +263,14 @@ fn build_footer(raw: Option<&str>) -> Result<Option<Footer>, AppError> {
         footer
             .parse_string(text)
             .map_err(|e| AppError(format!("Footer JSON PASETO tidak valid: {e}")))?;
+    } else if text.starts_with("k4.pid.") {
+        let id = pasetors::paserk::Id::try_from(text)
+            .map_err(|e| AppError(format!("PASERK key ID footer tidak valid: {e}")))?;
+        footer.key_id(&id);
     } else {
+        let json_footer = serde_json::json!({ "kid": text }).to_string();
         footer
-            .key_id(text)
+            .parse_string(&json_footer)
             .map_err(|e| AppError(format!("Gagal mengatur key_id footer: {e}")))?;
     }
     Ok(Some(footer))
@@ -277,19 +289,44 @@ pub fn sign_document(
         }
     };
 
-    if let Some(iss) = req.issuer.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+    if let Some(iss) = req
+        .issuer
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
         claims.issuer(iss)?;
     }
-    if let Some(sub) = req.subject.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+    if let Some(sub) = req
+        .subject
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
         claims.subject(sub)?;
     }
-    if let Some(aud) = req.audience.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+    if let Some(aud) = req
+        .audience
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
         claims.audience(aud)?;
     }
-    if let Some(jti) = req.doc_id.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+    if let Some(jti) = req
+        .doc_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
         claims.token_identifier(jti)?;
     }
-    if let Some(signer) = req.signer.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+    if let Some(signer) = req
+        .signer
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
         claims.add_additional("signer", signer)?;
     }
 
@@ -308,8 +345,8 @@ pub fn sign_document(
     }
 
     for (key, value) in &req.extra_claims {
-        let parsed_val: Value = serde_json::from_str(value)
-            .unwrap_or_else(|_| Value::String(value.clone()));
+        let parsed_val: Value =
+            serde_json::from_str(value).unwrap_or_else(|_| Value::String(value.clone()));
         claims.add_additional(key, parsed_val)?;
     }
 
@@ -321,7 +358,12 @@ pub fn sign_document(
         req.implicit_assert.as_deref(),
     )?;
 
-    let qr_payload = match req.verify_url.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+    let qr_payload = match req
+        .verify_url
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
         Some(base) => format_verify_url(base, &token),
         None => token.clone(),
     };
@@ -393,13 +435,12 @@ pub fn verify_token(
     .map_err(|e| AppError(format!("Verifikasi tanda tangan gagal: {e}")))?;
 
     let claims: Value = serde_json::from_str(trusted.payload())?;
-    let footer_out = {
-        let f = trusted.footer().trim();
-        if f.is_empty() {
-            None
-        } else {
-            Some(f.to_string())
-        }
+    let footer_str = String::from_utf8_lossy(trusted.footer());
+    let footer_trimmed = footer_str.trim();
+    let footer_out = if footer_trimmed.is_empty() {
+        None
+    } else {
+        Some(footer_trimmed.to_string())
     };
 
     let expected_file_hash = claims
@@ -433,10 +474,11 @@ pub fn inspect_token(token_input: &str) -> Result<InspectResult, AppError> {
     let untrusted = UntrustedToken::<Public, V4>::try_from(token_str.as_str())
         .map_err(|e| AppError(format!("Format token PASETO v4.public tidak valid: {e}")))?;
 
-    let payload_str = untrusted.untrusted_payload();
-    let claims: Value = serde_json::from_str(payload_str)
-        .unwrap_or_else(|_| Value::String(payload_str.to_string()));
-    let footer_raw = untrusted.untrusted_footer().trim();
+    let payload_str = String::from_utf8_lossy(untrusted.untrusted_payload());
+    let claims: Value = serde_json::from_str(&payload_str)
+        .unwrap_or_else(|_| Value::String(payload_str.into_owned()));
+    let footer_str = String::from_utf8_lossy(untrusted.untrusted_footer());
+    let footer_raw = footer_str.trim();
     let footer = if footer_raw.is_empty() {
         None
     } else {
@@ -516,7 +558,9 @@ pub fn parse_claim_kv(raw: &str) -> Result<(String, String), AppError> {
     };
     let key = k.trim();
     if key.is_empty() {
-        return Err(AppError("Nama kunci --claim tidak boleh kosong.".to_string()));
+        return Err(AppError(
+            "Nama kunci --claim tidak boleh kosong.".to_string(),
+        ));
     }
     Ok((key.to_string(), v.trim().to_string()))
 }
@@ -575,7 +619,9 @@ mod tests {
 
         let signed = sign_document(&sec, &req).expect("sign");
         assert!(signed.token.starts_with("v4.public."));
-        assert!(signed.qr_payload.starts_with("https://d4if.github.io/validate/#token=v4.public."));
+        assert!(signed
+            .qr_payload
+            .starts_with("https://d4if.github.io/validate/#token=v4.public."));
         assert!(signed.doc_hash.is_some());
 
         let verified = verify_token(

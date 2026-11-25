@@ -20,6 +20,7 @@ struct Cli {
 }
 
 #[derive(Subcommand)]
+#[allow(clippy::large_enum_variant)]
 enum Commands {
     /// Membuat pasangan kunci asimetris Ed25519 PASERK v4 (k4.public & k4.secret)
     Keygen {
@@ -39,7 +40,7 @@ enum Commands {
     /// Menandatangani dokumen atau metadata menjadi token PASETO v4.public dan QR Code
     Sign {
         /// Path berkas secret key atau string PASERK k4.secret.* (atau env PASETO_SECRET_KEY)
-        #[arg(short, long, env = "PASETO_SECRET_KEY")]
+        #[arg(short, long, env = "PASETO_SECRET_KEY", default_value = "signing.key")]
         key: String,
         /// Path dokumen yang akan di-hash (SHA-256) dan ditandatangani
         #[arg(short, long)]
@@ -71,8 +72,8 @@ enum Commands {
         /// Implicit assertion PASETO v4 (opsional)
         #[arg(long)]
         implicit_assert: Option<String>,
-        /// URL dasar halaman validator untuk membungkus token di QR Code
-        #[arg(long)]
+        /// URL dasar halaman validator untuk membungkus token di QR Code (isi "" untuk token mentah)
+        #[arg(long, default_value = "https://d4if.github.io/validate/")]
         verify_url: Option<String>,
         /// Path keluaran QR Code (.svg, .png, atau .txt)
         #[arg(short, long)]
@@ -93,7 +94,7 @@ enum Commands {
     /// Memverifikasi token PASETO v4.public menggunakan public key dan mencocokkan dokumen
     Verify {
         /// Path berkas public key atau string PASERK k4.public.*
-        #[arg(short = 'k', long)]
+        #[arg(short = 'k', long, default_value = "verifying.key")]
         public_key: String,
         /// Token v4.public.*, URL validator, atau path berkas token
         #[arg(short, long)]
