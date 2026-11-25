@@ -215,12 +215,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             }
 
             if let Some(ref qr_path) = out {
-                write_qr(
-                    &result.qr_payload,
-                    qr_path,
-                    format.map(Into::into),
-                    size,
-                )?;
+                write_qr(&result.qr_payload, qr_path, format.map(Into::into), size)?;
             } else if !json {
                 match format {
                     Some(CliQrFormat::Svg) => {
