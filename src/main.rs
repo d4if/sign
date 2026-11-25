@@ -73,7 +73,7 @@ enum Commands {
         #[arg(long)]
         implicit_assert: Option<String>,
         /// URL dasar halaman validator untuk membungkus token di QR Code (isi "" untuk token mentah)
-        #[arg(long, default_value = "https://d4if.github.io/validate/")]
+        #[arg(long, default_value = "https://repo.if.ulbi.ac.id/validate/")]
         verify_url: Option<String>,
         /// Path keluaran QR Code (.svg, .png, atau .txt)
         #[arg(short, long)]
