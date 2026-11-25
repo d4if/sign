@@ -18,6 +18,10 @@ use serde::Serialize;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
+#[cfg(feature = "gui")]
+pub mod gui;
+pub mod pdf_stamp;
+
 #[derive(Debug)]
 pub struct AppError(String);
 
@@ -447,15 +451,23 @@ pub fn verify_token(
         .get("doc_hash")
         .and_then(|v| v.as_str())
         .map(ToString::to_string);
+    let doc_base_len = claims
+        .get("doc_base_len")
+        .and_then(|v| v.as_u64())
+        .and_then(|v| usize::try_from(v).ok());
 
     let (file_hash_matched, actual_file_hash) = match expected_file {
-        Some(path) => {
-            let digest = sha256_file(path)?;
-            let matched = expected_file_hash
-                .as_deref()
-                .map(|expected| expected.eq_ignore_ascii_case(&digest.sha256_hex));
-            (matched, Some(digest.sha256_hex))
-        }
+        Some(path) => match expected_file_hash.as_deref() {
+            Some(expected) => {
+                let (matched, actual_hash) =
+                    pdf_stamp::verify_file_integrity(path, expected, doc_base_len)?;
+                (Some(matched), Some(actual_hash))
+            }
+            None => {
+                let digest = sha256_file(path)?;
+                (None, Some(digest.sha256_hex))
+            }
+        },
         None => (None, None),
     };
 

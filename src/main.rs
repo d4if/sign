@@ -2,6 +2,9 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand, ValueEnum};
+#[cfg(feature = "gui")]
+use d4if_sign::gui::run_gui;
+use d4if_sign::pdf_stamp::{sign_and_stamp_pdf, PdfStampRequest};
 use d4if_sign::{
     extract_token_string, generate_keypair, inspect_token, load_public_key, load_secret_key,
     parse_claim_kv, parse_duration_str, render_svg, render_terminal, sign_document, verify_token,
@@ -12,11 +15,11 @@ use d4if_sign::{
 #[command(
     name = "sign",
     version,
-    about = "Generator & verifikator tanda tangan digital dokumen berbasis QR Code dan PASETO v4.public"
+    about = "Generator, editor QR PDF, & verifikator tanda tangan digital berbasis PASETO v4.public"
 )]
 struct Cli {
     #[command(subcommand)]
-    command: Commands,
+    command: Option<Commands>,
 }
 
 #[derive(Subcommand)]
@@ -87,9 +90,31 @@ enum Commands {
         /// Simpan token mentah v4.public ke berkas teks
         #[arg(long)]
         token_out: Option<PathBuf>,
+        /// Tempelkan QR Code ke PDF secara incremental dan simpan ke berkas PDF baru
+        #[arg(long)]
+        pdf_out: Option<PathBuf>,
+        /// Nomor halaman PDF (mulai dari 1) untuk --pdf-out
+        #[arg(long, default_value_t = 1)]
+        page: u32,
+        /// Koordinat kiri-bawah X (dalam PDF point) untuk --pdf-out
+        #[arg(long, default_value_t = 360.0)]
+        x: f32,
+        /// Koordinat kiri-bawah Y (dalam PDF point) untuk --pdf-out
+        #[arg(long, default_value_t = 110.0)]
+        y: f32,
+        /// Ukuran sisi QR persegi (dalam PDF point) untuk --pdf-out
+        #[arg(long, default_value_t = 88.0)]
+        qr_size: f32,
         /// Format output JSON
         #[arg(long)]
         json: bool,
+    },
+    /// Membuka editor desktop GUI untuk menempel, menggeser, dan resize QR pada PDF
+    #[cfg(feature = "gui")]
+    Gui {
+        /// Berkas PDF awal yang langsung dibuka di editor (opsional)
+        #[arg(short, long)]
+        pdf: Option<PathBuf>,
     },
     /// Memverifikasi token PASETO v4.public menggunakan public key dan mencocokkan dokumen
     Verify {
@@ -140,7 +165,21 @@ impl From<CliQrFormat> for QrFormat {
 fn run() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
-    match cli.command {
+    let Some(command) = cli.command else {
+        #[cfg(feature = "gui")]
+        {
+            return run_gui(None);
+        }
+        #[cfg(not(feature = "gui"))]
+        {
+            use clap::CommandFactory;
+            Cli::command().print_help()?;
+            println!();
+            return Ok(());
+        }
+    };
+
+    match command {
         Commands::Keygen {
             secret_out,
             public_out,
@@ -181,6 +220,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             format,
             size,
             token_out,
+            pdf_out,
+            page,
+            x,
+            y,
+            qr_size,
             json,
         } => {
             let secret = load_secret_key(&key)?;
@@ -190,21 +234,48 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 .map(|c| parse_claim_kv(c))
                 .collect::<Result<Vec<_>, _>>()?;
 
-            let req = SignRequest {
-                file,
-                issuer,
-                signer,
-                doc_id,
-                subject,
-                audience,
-                ttl_secs,
-                footer,
-                extra_claims,
-                implicit_assert: implicit_assert.map(String::into_bytes),
-                verify_url,
+            let result = if let Some(ref stamped_path) = pdf_out {
+                let pdf_in = file
+                    .clone()
+                    .ok_or("Opsi --pdf-out wajib disertai --file <input.pdf>.")?;
+                let stamped = sign_and_stamp_pdf(
+                    &secret,
+                    &PdfStampRequest {
+                        pdf_in,
+                        pdf_out: stamped_path.clone(),
+                        page,
+                        x,
+                        y,
+                        qr_size,
+                        issuer,
+                        signer,
+                        doc_id,
+                        subject,
+                        audience,
+                        ttl_secs,
+                        footer,
+                        extra_claims,
+                        implicit_assert: implicit_assert.map(String::into_bytes),
+                        verify_url,
+                    },
+                )?;
+                stamped.sign_result
+            } else {
+                let req = SignRequest {
+                    file,
+                    issuer,
+                    signer,
+                    doc_id,
+                    subject,
+                    audience,
+                    ttl_secs,
+                    footer,
+                    extra_claims,
+                    implicit_assert: implicit_assert.map(String::into_bytes),
+                    verify_url,
+                };
+                sign_document(&secret, &req)?
             };
-
-            let result = sign_document(&secret, &req)?;
 
             if let Some(ref t_path) = token_out {
                 if let Some(parent) = t_path.parent() {
@@ -292,6 +363,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             let normalized = extract_token_string(&token)?;
             let info = inspect_token(&normalized)?;
             println!("{}", serde_json::to_string_pretty(&info)?);
+        }
+        #[cfg(feature = "gui")]
+        Commands::Gui { pdf } => {
+            run_gui(pdf)?;
         }
     }
 

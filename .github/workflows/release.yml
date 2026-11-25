@@ -146,10 +146,14 @@ jobs:
         env:
           CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
         run: |
+          EXTRA_FLAGS=""
+          if [ "${{ matrix.target }}" = "x86_64-unknown-linux-musl" ]; then
+            EXTRA_FLAGS="--no-default-features"
+          fi
           if [ -f Cargo.lock ]; then
-            cargo build --release --locked --target ${{ matrix.target }}
+            cargo build --release --locked --target ${{ matrix.target }} $EXTRA_FLAGS
           else
-            cargo build --release --target ${{ matrix.target }}
+            cargo build --release --target ${{ matrix.target }} $EXTRA_FLAGS
           fi
 
       - name: Package Unix archive
